@@ -1,0 +1,6 @@
+yfinance
+prophet
+pandas
+numpy
+datetime
+streamlit
