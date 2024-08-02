@@ -13,7 +13,10 @@ def get_stock_data(ticker, start_date, end_date):
     return df[['Date', 'Close', 'Volume']]
 
 def forecast_with_prophet(df, periods=30):
-    prophet_df = df.rename(columns={'Date': 'ds', 'Close': 'y'})
+    prophet_df = df[['Date', 'Close']].rename(columns={'Date': 'ds', 'Close': 'y'})
+    prophet_df['ds'] = pd.to_datetime(prophet_df['ds'])
+    prophet_df['y'] = prophet_df['y'].astype(np.float64)
+    
     model = Prophet(daily_seasonality=False, weekly_seasonality=False, yearly_seasonality=False)
     model.fit(prophet_df)
     future = model.make_future_dataframe(periods=periods)
