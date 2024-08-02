@@ -1,4 +1,5 @@
 import yfinance as yf
+from prophet import Prophet
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
@@ -11,11 +12,12 @@ def get_stock_data(ticker, start_date, end_date):
     df['Date'] = pd.to_datetime(df['Date']).dt.tz_localize(None)  # Remove timezone information
     return df[['Date', 'Close', 'Volume']]
 
-def simple_forecast(df, periods=30):
-    last_price = df['Close'].iloc[-1]
-    trend = df['Close'].diff().mean()
-    forecast = pd.DataFrame({'ds': pd.date_range(start=df['Date'].iloc[-1] + pd.Timedelta(days=1), periods=periods)})
-    forecast['yhat'] = [last_price + i * trend for i in range(1, periods + 1)]
+def forecast_with_prophet(df, periods=30):
+    prophet_df = df.rename(columns={'Date': 'ds', 'Close': 'y'})
+    model = Prophet(daily_seasonality=False, weekly_seasonality=False, yearly_seasonality=False)
+    model.fit(prophet_df)
+    future = model.make_future_dataframe(periods=periods)
+    forecast = model.predict(future)
     return forecast
 
 def calculate_macd(df, short_period=12, long_period=26, signal_period=9):
@@ -74,7 +76,10 @@ def backtest_strategy(df):
     df['Return'] = 0.0
     
     # Generate buy signals based on criteria
-    for i in range(1, len(df)):  # Skip the first row
+    for i in range(len(df)):
+        if i < 1:  # Skip the first row
+            continue
+        
         price_trend = df['Close'].iloc[i] > df['Close'].iloc[i-1]
         short_term_trend = df['MA5'].iloc[i] > df['MA20'].iloc[i]
         long_term_trend = df['MA50'].iloc[i] > df['MA200'].iloc[i]
@@ -84,12 +89,12 @@ def backtest_strategy(df):
         rsi_below_50 = df['RSI'].iloc[i] < 50
         
         if price_trend and short_term_trend and long_term_trend and macd_crossover and unusual_volume and rsi_below_50:
-            df.at[i, 'Signal'] = 1  # Buy signal
+            df['Signal'].iloc[i] = 1  # Buy signal
     
     # Calculate returns based on signals
     for i in range(1, len(df)):
         if df['Signal'].iloc[i-1] == 1:
-            df.at[i, 'Return'] = (df['Close'].iloc[i] / df['Close'].iloc[i-1]) - 1
+            df['Return'].iloc[i] = (df['Close'].iloc[i] / df['Close'].iloc[i-1]) - 1
     
     # Calculate cumulative returns
     df['Cumulative_Return'] = (1 + df['Return']).cumprod() - 1
@@ -101,7 +106,7 @@ def backtest_strategy(df):
     return total_return, win_rate
 
 def main():
-    st.title("Stock Analysis with Technical Indicators")
+    st.title("Stock Analysis with Prophet and Technical Indicators")
     
     tickers = st.text_input("Enter stock tickers separated by commas (e.g., AAPL, MSFT, GOOGL):")
     
@@ -116,7 +121,7 @@ def main():
             try:
                 st.write(f"Analyzing {ticker}...")
                 df = get_stock_data(ticker, start_date, end_date)
-                forecast = simple_forecast(df)
+                forecast = forecast_with_prophet(df)
                 
                 price_trend, short_term_trend, long_term_trend, macd_crossover, unusual_volume, rsi_below_50 = check_bullish_trend(df, forecast)
                 
