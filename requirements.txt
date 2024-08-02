@@ -1,5 +1,5 @@
 yfinance
-prophet=1.0.1
+prophet==1.0.1
 pandas
 numpy
 datetime
