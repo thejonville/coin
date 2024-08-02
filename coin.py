@@ -5,8 +5,8 @@ import numpy as np
 from datetime import datetime, timedelta
 import streamlit as st
 
-import warnings
-warnings.filterwarnings("ignore", category=FutureWarning)
+np.float = np.float64
+
 def get_stock_data(ticker, start_date, end_date):
     stock = yf.Ticker(ticker)
     df = stock.history(start=start_date, end=end_date, interval="1d")
