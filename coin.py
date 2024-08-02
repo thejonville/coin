@@ -1,5 +1,4 @@
 import yfinance as yf
-from prophet import Prophet
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
@@ -12,12 +11,11 @@ def get_stock_data(ticker, start_date, end_date):
     df['Date'] = pd.to_datetime(df['Date']).dt.tz_localize(None)  # Remove timezone information
     return df[['Date', 'Close', 'Volume']]
 
-def forecast_with_prophet(df, periods=30):
-    prophet_df = df.rename(columns={'Date': 'ds', 'Close': 'y'})
-    model = Prophet(daily_seasonality=False, weekly_seasonality=False, yearly_seasonality=False)
-    model.fit(prophet_df)
-    future = model.make_future_dataframe(periods=periods)
-    forecast = model.predict(future)
+def simple_forecast(df, periods=30):
+    last_price = df['Close'].iloc[-1]
+    trend = df['Close'].diff().mean()
+    forecast = pd.DataFrame({'ds': pd.date_range(start=df['Date'].iloc[-1] + pd.Timedelta(days=1), periods=periods)})
+    forecast['yhat'] = [last_price + i * trend for i in range(1, periods + 1)]
     return forecast
 
 def calculate_macd(df, short_period=12, long_period=26, signal_period=9):
@@ -103,7 +101,7 @@ def backtest_strategy(df):
     return total_return, win_rate
 
 def main():
-    st.title("Stock Analysis with Prophet and Technical Indicators")
+    st.title("Stock Analysis with Technical Indicators")
     
     tickers = st.text_input("Enter stock tickers separated by commas (e.g., AAPL, MSFT, GOOGL):")
     
@@ -118,7 +116,7 @@ def main():
             try:
                 st.write(f"Analyzing {ticker}...")
                 df = get_stock_data(ticker, start_date, end_date)
-                forecast = forecast_with_prophet(df)
+                forecast = simple_forecast(df)
                 
                 price_trend, short_term_trend, long_term_trend, macd_crossover, unusual_volume, rsi_below_50 = check_bullish_trend(df, forecast)
                 
