@@ -76,10 +76,7 @@ def backtest_strategy(df):
     df['Return'] = 0.0
     
     # Generate buy signals based on criteria
-    for i in range(len(df)):
-        if i < 1:  # Skip the first row
-            continue
-        
+    for i in range(1, len(df)):  # Skip the first row
         price_trend = df['Close'].iloc[i] > df['Close'].iloc[i-1]
         short_term_trend = df['MA5'].iloc[i] > df['MA20'].iloc[i]
         long_term_trend = df['MA50'].iloc[i] > df['MA200'].iloc[i]
@@ -89,12 +86,12 @@ def backtest_strategy(df):
         rsi_below_50 = df['RSI'].iloc[i] < 50
         
         if price_trend and short_term_trend and long_term_trend and macd_crossover and unusual_volume and rsi_below_50:
-            df['Signal'].iloc[i] = 1  # Buy signal
+            df.at[i, 'Signal'] = 1  # Buy signal
     
     # Calculate returns based on signals
     for i in range(1, len(df)):
         if df['Signal'].iloc[i-1] == 1:
-            df['Return'].iloc[i] = (df['Close'].iloc[i] / df['Close'].iloc[i-1]) - 1
+            df.at[i, 'Return'] = (df['Close'].iloc[i] / df['Close'].iloc[i-1]) - 1
     
     # Calculate cumulative returns
     df['Cumulative_Return'] = (1 + df['Return']).cumprod() - 1
