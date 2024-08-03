@@ -1,11 +1,11 @@
+
 import yfinance as yf
-from prophet import Prophet
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 import streamlit as st
 
-np.float = np.float64
+from prophet import Prophet
 
 def get_stock_data(ticker, start_date, end_date):
     stock = yf.Ticker(ticker)
@@ -15,103 +15,92 @@ def get_stock_data(ticker, start_date, end_date):
     return df[['Date', 'Close', 'Volume']]
 
 def forecast_with_prophet(df, periods=30):
-    prophet_df = df[['Date', 'Close']].rename(columns={'Date': 'ds', 'Close': 'y'})
-    prophet_df['ds'] = pd.to_datetime(prophet_df['ds'])
-    prophet_df['y'] = prophet_df['y'].astype(np.float64)
+    if not prophet_available:
+        return None
     
-    model = Prophet(daily_seasonality=False, weekly_seasonality=False, yearly_seasonality=False)
-    model.fit(prophet_df)
-    future = model.make_future_dataframe(periods=periods)
-    forecast = model.predict(future)
-    return forecast
+    try:
+        prophet_df = df[['Date', 'Close']].rename(columns={'Date': 'ds', 'Close': 'y'})
+        prophet_df['ds'] = pd.to_datetime(prophet_df['ds'])
+        prophet_df['y'] = prophet_df['y'].astype(np.float64)
+        
+        model = Prophet(daily_seasonality=False, weekly_seasonality=False, yearly_seasonality=False)
+        model.fit(prophet_df)
+        future = model.make_future_dataframe(periods=periods)
+        forecast = model.predict(future)
+        return forecast
+    except Exception as e:
+        st.error(f"Error in Prophet forecasting: {str(e)}")
+        return None
 
-def calculate_macd(df, short_period=12, long_period=26, signal_period=9):
-    df['EMA_short'] = df['Close'].ewm(span=short_period, adjust=False).mean()
-    df['EMA_long'] = df['Close'].ewm(span=long_period, adjust=False).mean()
-    df['MACD'] = df['EMA_short'] - df['EMA_long']
-    df['Signal_Line'] = df['MACD'].ewm(span=signal_period, adjust=False).mean()
-    return df
+def calculate_indicators(df):
+    # Calculate MACD
+    df['EMA12'] = df['Close'].ewm(span=12, adjust=False).mean()
+    df['EMA26'] = df['Close'].ewm(span=26, adjust=False).mean()
+    df['MACD'] = df['EMA12'] - df['EMA26']
+    df['Signal_Line'] = df['MACD'].ewm(span=9, adjust=False).mean()
 
-def calculate_rsi(df, period=14):
+    # Calculate RSI
     delta = df['Close'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
     rs = gain / loss
     df['RSI'] = 100 - (100 / (1 + rs))
-    return df
 
-def check_bullish_trend(df, forecast):
-    # Check if the forecasted price is higher than the current price
-    current_price = df['Close'].iloc[-1]
-    forecasted_price = forecast['yhat'].iloc[-1]
-    price_trend = forecasted_price > current_price
-
-    # Calculate 5-day, 20-day, 50-day, and 200-day moving averages
+    # Calculate Moving Averages
     df['MA5'] = df['Close'].rolling(window=5).mean()
     df['MA20'] = df['Close'].rolling(window=20).mean()
     df['MA50'] = df['Close'].rolling(window=50).mean()
     df['MA200'] = df['Close'].rolling(window=200).mean()
 
-    # Check if 5-day MA is above 20-day MA
-    short_term_trend = df['MA5'].iloc[-1] > df['MA20'].iloc[-1]
+    return df
 
-    # Check if 50-day MA is above 200-day MA (Golden Cross)
-    long_term_trend = df['MA50'].iloc[-1] > df['MA200'].iloc[-1]
-
-    # Calculate MACD and check for crossover
-    df = calculate_macd(df)
-    macd_crossover = (df['MACD'].iloc[-1] > df['Signal_Line'].iloc[-1]) and (df['MACD'].iloc[-2] <= df['Signal_Line'].iloc[-2])
-
-    # Check for unusual volume in the last 2 days
-    avg_volume = df['Volume'].rolling(window=20).mean()
-    unusual_volume = (df['Volume'].iloc[-1] > 1.5 * avg_volume.iloc[-1]) or (df['Volume'].iloc[-2] > 1.5 * avg_volume.iloc[-2])
-
-    # Calculate RSI and check if it's less than 50
-    df = calculate_rsi(df)
-    rsi_below_50 = df['RSI'].iloc[-1] < 58
-
-    return price_trend, short_term_trend, long_term_trend, macd_crossover, unusual_volume, rsi_below_50
+def check_buy_signal(row):
+    price_trend = row['Close'] > row['Close_prev']
+    short_term_trend = row['MA5'] > row['MA20']
+    long_term_trend = row['MA50'] > row['MA200']
+    macd_crossover = (row['MACD'] > row['Signal_Line']) and (row['MACD_prev'] <= row['Signal_Line_prev'])
+    unusual_volume = row['Volume'] > 1.5 * row['Avg_Volume']
+    rsi_below_50 = row['RSI'] < 50
+    
+    return price_trend and short_term_trend and long_term_trend and macd_crossover and unusual_volume and rsi_below_50
 
 def backtest_strategy(df):
-    df = calculate_macd(df)
-    df = calculate_rsi(df)
+    df = calculate_indicators(df)
     
-    # Initialize columns for signals and returns
-    df['Signal'] = 0
-    df['Return'] = 0.0
+    # Calculate previous day's values for comparison
+    df['Close_prev'] = df['Close'].shift(1)
+    df['MACD_prev'] = df['MACD'].shift(1)
+    df['Signal_Line_prev'] = df['Signal_Line'].shift(1)
+    df['Avg_Volume'] = df['Volume'].rolling(window=20).mean()
     
-    # Generate buy signals based on criteria
-    for i in range(len(df)):
-        if i < 1:  # Skip the first row
-            continue
-        
-        price_trend = df['Close'].iloc[i] > df['Close'].iloc[i-1]
-        short_term_trend = df['MA5'].iloc[i] > df['MA20'].iloc[i]
-        long_term_trend = df['MA50'].iloc[i] > df['MA200'].iloc[i]
-        macd_crossover = (df['MACD'].iloc[i] > df['Signal_Line'].iloc[i]) and (df['MACD'].iloc[i-1] <= df['Signal_Line'].iloc[i-1])
-        avg_volume = df['Volume'].rolling(window=20).mean().iloc[i]
-        unusual_volume = (df['Volume'].iloc[i] > 1.5 * avg_volume)
-        rsi_below_50 = df['RSI'].iloc[i] < 50
-        
-        if price_trend and short_term_trend and long_term_trend and macd_crossover and unusual_volume and rsi_below_50:
-            df['Signal'].iloc[i] = 1  # Buy signal
+    # Generate buy signals
+    df['Signal'] = df.apply(check_buy_signal, axis=1).astype(int)
     
-    # Calculate returns based on signals
-    for i in range(1, len(df)):
-        if df['Signal'].iloc[i-1] == 1:
-            df['Return'].iloc[i] = (df['Close'].iloc[i] / df['Close'].iloc[i-1]) - 1
+    # Calculate returns
+    df['Return'] = df['Close'].pct_change()
+    df['Strategy_Return'] = df['Signal'].shift(1) * df['Return']
     
     # Calculate cumulative returns
-    df['Cumulative_Return'] = (1 + df['Return']).cumprod() - 1
+    df['Cumulative_Market_Return'] = (1 + df['Return']).cumprod()
+    df['Cumulative_Strategy_Return'] = (1 + df['Strategy_Return']).cumprod()
     
     # Calculate performance metrics
-    total_return = df['Cumulative_Return'].iloc[-1]
-    win_rate = df[df['Return'] > 0].shape[0] / df[df['Signal'] == 1].shape[0] if df[df['Signal'] == 1].shape[0] > 0 else 0
+    total_return = df['Cumulative_Strategy_Return'].iloc[-1] - 1
+    market_return = df['Cumulative_Market_Return'].iloc[-1] - 1
+    sharpe_ratio = np.sqrt(252) * df['Strategy_Return'].mean() / df['Strategy_Return'].std()
     
-    return total_return, win_rate
+    # Calculate win rate
+    trades = df[df['Signal'].diff() == 1]
+    winning_trades = trades[trades['Return'] > 0]
+    win_rate = len(winning_trades) / len(trades) if len(trades) > 0 else 0
+
+    return total_return, market_return, sharpe_ratio, win_rate
 
 def main():
-    st.title("Stock Analysis with Prophet and Technical Indicators")
+    st.title("Stock Analysis with Technical Indicators")
+    
+    if not prophet_available:
+        st.warning("Prophet is not available. Forecasting will not be performed.")
     
     tickers = st.text_input("Enter stock tickers separated by commas (e.g., AAPL, MSFT, GOOGL):")
     
@@ -120,33 +109,29 @@ def main():
         end_date = datetime.now()
         start_date = end_date - timedelta(days=365)
         
-        bullish_stocks = []
-
         for ticker in tickers:
             try:
                 st.write(f"Analyzing {ticker}...")
                 df = get_stock_data(ticker, start_date, end_date)
-                forecast = forecast_with_prophet(df)
                 
-                price_trend, short_term_trend, long_term_trend, macd_crossover, unusual_volume, rsi_below_50 = check_bullish_trend(df, forecast)
+                # Backtest the strategy
+                total_return, market_return, sharpe_ratio, win_rate = backtest_strategy(df)
                 
-                if price_trend and short_term_trend and long_term_trend and macd_crossover and unusual_volume and rsi_below_50:
-                    bullish_stocks.append(ticker)
-                    
-                    # Backtest the strategy
-                    total_return, win_rate = backtest_strategy(df)
-                    st.write(f"Backtest results for {ticker}:")
-                    st.write(f"Total Return: {total_return * 100:.2f}%")
-                    st.write(f"Win Rate: {win_rate * 100:.2f}%")
+                st.write(f"Backtest results for {ticker}:")
+                st.write(f"Strategy Total Return: {total_return * 100:.2f}%")
+                st.write(f"Market Total Return: {market_return * 100:.2f}%")
+                st.write(f"Sharpe Ratio: {sharpe_ratio:.2f}")
+                st.write(f"Win Rate: {win_rate * 100:.2f}%")
+                
+                # Forecast (if Prophet is available)
+                if prophet_available:
+                    forecast = forecast_with_prophet(df)
+                    if forecast is not None:
+                        st.write("Forecast for next 30 days:")
+                        st.line_chart(forecast[['ds', 'yhat']])
+                
             except Exception as e:
                 st.write(f"Error analyzing {ticker}: {str(e)}")
-
-        if bullish_stocks:
-            st.write("\nStocks with potential bullish trends:")
-            for stock in bullish_stocks:
-                st.write(stock)
-        else:
-            st.write("No stocks with potential bullish trends found.")
 
 if __name__ == "__main__":
     main()
