@@ -1,7 +1,7 @@
 yfinance
-prophet
-numpy==1.26.4
+numpy
 pandas
 datetime
 streamlit
 plotly
+ta
