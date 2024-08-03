@@ -92,9 +92,3 @@ if st.button('Scan Stocks'):
         st.dataframe(potential_buys)
     else:
         st.write("No potential buy signals detected.")
-
-st.markdown("""
-### About this Stock Scanner
-This tool scans for stocks that show a potential buy signal based on two criteria:
-1. A strong MACD (Moving Average Convergence Divergence) crossing above the signal line in the last 2 days.
-2. An ADX (Average Directional Index) value of 20 or above, indicating a strong trend.
