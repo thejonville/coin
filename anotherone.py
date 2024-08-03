@@ -1,64 +1,100 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import ta
+import numpy as np
+from datetime import datetime, timedelta
 
-def analyze_stock(ticker):
-    try:
-        # Fetch data
-        data = yf.download(ticker, period="6mo")
-        
-        if len(data) < 20:  # Not enough data
-            return False
-        
-        # Calculate indicators
-        data['EMA5'] = ta.trend.ema_indicator(data['Close'], window=5)
-        data['EMA20'] = ta.trend.ema_indicator(data['Close'], window=20)
-        data['MACD'] = ta.trend.macd_diff(data['Close'])
-        data['RSI'] = ta.momentum.rsi(data['Close'])
-        
-        # Check conditions
-        ema_cross = (data['EMA5'].iloc[-2] <= data['EMA20'].iloc[-2]) and (data['EMA5'].iloc[-1] > data['EMA20'].iloc[-1])
-        macd_cross = (data['MACD'].iloc[-2] <= 0) and (data['MACD'].iloc[-1] > 0)
-        rsi_below_50 = data['RSI'].iloc[-1] < 58
-        
-        return ema_cross and macd_cross and rsi_below_50
-    except Exception as e:
-        st.error(f"Error analyzing {ticker}: {str(e)}")
-        return False
+def calculate_macd(data):
+    exp1 = data['Close'].ewm(span=12, adjust=False).mean()
+    exp2 = data['Close'].ewm(span=26, adjust=False).mean()
+    macd = exp1 - exp2
+    signal = macd.ewm(span=9, adjust=False).mean()
+    return macd, signal
 
-st.title("Stock Screener")
+def calculate_adx(data, period=14):
+    high = data['High']
+    low = data['Low']
+    close = data['Close']
+    
+    plus_dm = high.diff()
+    minus_dm = low.diff()
+    
+    plus_dm[plus_dm < 0] = 0
+    minus_dm[minus_dm > 0] = 0
+    
+    tr1 = pd.DataFrame(high - low)
+    tr2 = pd.DataFrame(abs(high - close.shift(1)))
+    tr3 = pd.DataFrame(abs(low - close.shift(1)))
+    tr = pd.concat([tr1, tr2, tr3], axis=1, join='inner').max(axis=1)
+    
+    atr = tr.rolling(window=period).mean()
+    plus_di = 100 * (plus_dm.ewm(alpha=1/period).mean() / atr)
+    minus_di = abs(100 * (minus_dm.ewm(alpha=1/period).mean() / atr))
+    dx = (abs(plus_di - minus_di) / (plus_di + minus_di)) * 100
+    adx = dx.ewm(alpha=1/period).mean()
+    
+    return adx
+
+def check_macd_and_adx(ticker):
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=60)  # Get 60 days of data for calculation
+    
+    data = yf.download(ticker, start=start_date, end=end_date)
+    if len(data) < 27:  # We need at least 27 days of data for MACD calculation
+        return False, "Insufficient data"
+    
+    macd, signal = calculate_macd(data)
+    adx = calculate_adx(data)
+    
+    # Check last 2 days for MACD crossing above signal line
+    last_two_days = macd.tail(2)
+    last_two_days_signal = signal.tail(2)
+    last_adx = adx.tail(1).values[0]
+    
+    if len(last_two_days) < 2 or len(last_two_days_signal) < 2:
+        return False, "Insufficient recent data"
+    
+    if (last_two_days.iloc[0] <= last_two_days_signal.iloc[0] and 
+        last_two_days.iloc[1] > last_two_days_signal.iloc[1] and
+        last_adx >= 20):
+        # Calculate the strength of the crossing
+        crossing_strength = (last_two_days.iloc[1] - last_two_days_signal.iloc[1]) / last_two_days_signal.iloc[1]
+        if crossing_strength > 0.01:  # 1% threshold for "strong" crossing
+            return True, f"MACD Crossing: Yes, ADX: {last_adx:.2f}"
+    
+    return False, f"MACD Crossing: No, ADX: {last_adx:.2f}"
+
+st.title('Stock Scanner: MACD Crossing & ADX')
 
 # User input
-tickers_input = st.text_input("Enter stock tickers (comma-separated):")
-tickers = [ticker.strip().upper() for ticker in tickers_input.split(',') if ticker.strip()]
+tickers_input = st.text_input("Enter stock tickers separated by commas:", "AAPL,MSFT,GOOGL")
+tickers = [ticker.strip().upper() for ticker in tickers_input.split(',')]
 
-if st.button("Analyze"):
-    if not tickers:
-        st.warning("Please enter at least one ticker.")
+if st.button('Scan Stocks'):
+    results = []
+    for ticker in tickers:
+        try:
+            signal, details = check_macd_and_adx(ticker)
+            status = "Potential Buy" if signal else "No Signal"
+            results.append({"Ticker": ticker, "Status": status, "Details": details})
+        except Exception as e:
+            results.append({"Ticker": ticker, "Status": "Error", "Details": str(e)})
+    
+    # Display results
+    st.subheader("Scan Results")
+    df = pd.DataFrame(results)
+    st.dataframe(df)
+    
+    # Display potential buy signals
+    potential_buys = df[df['Status'] == 'Potential Buy']
+    if not potential_buys.empty:
+        st.subheader("Potential Buy Signals")
+        st.dataframe(potential_buys)
     else:
-        potential_buys = []
-        errors = []
-        
-        progress_bar = st.progress(0)
-        for i, ticker in enumerate(tickers):
-            if analyze_stock(ticker):
-                potential_buys.append(ticker)
-            progress_bar.progress((i + 1) / len(tickers))
-        
-        if potential_buys:
-            st.success("Potential buy signals found for:")
-            for ticker in potential_buys:
-                st.write(f"- {ticker}")
-        else:
-            st.info("No stocks met all the criteria.")
-        
-        if errors:
-            st.error("Errors occurred for the following tickers:")
-            for error in errors:
-                st.write(error)
+        st.write("No potential buy signals detected.")
 
-st.markdown("**Criteria:**")
-st.markdown("- EMA5 crosses above EMA20")
-st.markdown("- MACD crosses above signal line")
-st.markdown("- RSI below 50")
+st.markdown("""
+### About this Stock Scanner
+This tool scans for stocks that show a potential buy signal based on two criteria:
+1. A strong MACD (Moving Average Convergence Divergence) crossing above the signal line in the last 2 days.
+2. An ADX (Average Directional Index) value of 20 or above, indicating a strong trend.
