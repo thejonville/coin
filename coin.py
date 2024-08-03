@@ -68,7 +68,7 @@ def check_bullish_trend(df, forecast):
 
     # Calculate RSI and check if it's less than 50
     df = calculate_rsi(df)
-    rsi_below_50 = df['RSI'].iloc[-1] < 50
+    rsi_below_50 = df['RSI'].iloc[-1] < 58
 
     return price_trend, short_term_trend, long_term_trend, macd_crossover, unusual_volume, rsi_below_50
 
