@@ -1,7 +1,7 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import talib
+from ta.momentum import RSIIndicator
 
 def analyze_stocks(tickers):
     results = []
@@ -12,7 +12,8 @@ def analyze_stocks(tickers):
         df = stock.history(period="1mo")
         
         # Calculate RSI
-        df['RSI'] = talib.RSI(df['Close'], timeperiod=14)
+        rsi_indicator = RSIIndicator(close=df['Close'], window=14)
+        df['RSI'] = rsi_indicator.rsi()
         
         # Identify buy and sell candles
         df['Buy'] = (df['Close'] > df['Open']) & (df['RSI'] < 70)
