@@ -59,10 +59,10 @@ def get_signals(symbol, start_date, end_date, interval, stop_loss_pct=0.02, prof
     
     for i in range(1, len(data)):
         if not in_position:
+            # More lenient buy conditions
             if (data['SMA_Fast'].iloc[i] > data['SMA_Slow'].iloc[i]) and \
                (data['MACD'].iloc[i] > data['MACD_Signal'].iloc[i]) and \
-               (data['RSI'].iloc[i] < 60) and (data['Close'].iloc[i] < data['BB_Lower'].iloc[i]) and \
-               (data['Volume'].iloc[i] > data['Volume'].rolling(window=sma_slow).mean().iloc[i]):  # Volume confirmation
+               (data['RSI'].iloc[i] < 70):  # Removed BB and volume conditions
                 data.iloc[i, data.columns.get_loc('Buy_Signal')] = 1
                 data.iloc[i, data.columns.get_loc('Entry_Price')] = data['Close'].iloc[i]
                 in_position = True
@@ -130,6 +130,9 @@ def analyze_stocks(symbols, start_date, end_date, interval):
         buy_signals = signals[signals['Buy_Signal'] == 1]
         exit_signals = signals[signals['Exit_Signal'] == 1]
         
+        st.write(f"Total buy signals: {len(buy_signals)}")
+        st.write(f"Total exit signals: {len(exit_signals)}")
+        
         if buy_signals.empty:
             st.write("No buy signals generated for this stock in the given time period.")
         else:
@@ -149,6 +152,15 @@ def analyze_stocks(symbols, start_date, end_date, interval):
                 else:
                     st.write("No exit signal generated (hold position)")
                 st.write("")
+        
+        # Debug information
+        st.write("Debug Information:")
+        st.write(f"Data shape: {signals.shape}")
+        st.write(f"Date range: {signals.index.min()} to {signals.index.max()}")
+        st.write("First few rows of data:")
+        st.write(signals.head())
+        st.write("Last few rows of data:")
+        st.write(signals.tail())
 
 # Streamlit app
 st.title("Stock Analysis App")
