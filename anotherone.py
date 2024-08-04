@@ -1,4 +1,4 @@
-```python
+
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -65,5 +65,3 @@ start_date = input("Enter start date (YYYY-MM-DD): ")
 end_date = input("Enter end date (YYYY-MM-DD): ")
 
 analyze_stocks(symbols, start_date, end_date)
-
-```
