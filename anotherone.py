@@ -13,6 +13,9 @@ def get_signals(symbol, start_date, end_date, interval, stop_loss_pct=0.02, prof
     # Download data
     data = yf.download(symbol, start=start_date, end=end_date, interval=interval)
     
+    if data.empty:
+        return None
+
     # Adjust indicator parameters based on the selected interval
     if interval in ['1m', '2m', '5m', '15m', '30m', '60m', '90m']:
         sma_fast = 12
@@ -56,16 +59,16 @@ def get_signals(symbol, start_date, end_date, interval, stop_loss_pct=0.02, prof
     
     for i in range(1, len(data)):
         if not in_position:
-            if (data.iloc[i]['SMA_Fast'] > data.iloc[i]['SMA_Slow']) and \
-               (data.iloc[i]['MACD'] > data.iloc[i]['MACD_Signal']) and \
-               (data.iloc[i]['RSI'] < 60) and (data.iloc[i]['Close'] < data.iloc[i]['BB_Lower']) and \
-               (data.iloc[i]['Volume'] > data['Volume'].rolling(window=sma_slow).mean()[i]):  # Volume confirmation
+            if (data['SMA_Fast'].iloc[i] > data['SMA_Slow'].iloc[i]) and \
+               (data['MACD'].iloc[i] > data['MACD_Signal'].iloc[i]) and \
+               (data['RSI'].iloc[i] < 60) and (data['Close'].iloc[i] < data['BB_Lower'].iloc[i]) and \
+               (data['Volume'].iloc[i] > data['Volume'].rolling(window=sma_slow).mean().iloc[i]):  # Volume confirmation
                 data.iloc[i, data.columns.get_loc('Buy_Signal')] = 1
-                data.iloc[i, data.columns.get_loc('Entry_Price')] = data.iloc[i]['Close']
+                data.iloc[i, data.columns.get_loc('Entry_Price')] = data['Close'].iloc[i]
                 in_position = True
-                entry_price = data.iloc[i]['Close']
+                entry_price = data['Close'].iloc[i]
         else:
-            current_price = data.iloc[i]['Close']
+            current_price = data['Close'].iloc[i]
             if current_price <= entry_price * (1 - stop_loss_pct):
                 data.iloc[i, data.columns.get_loc('Exit_Signal')] = 1
                 data.iloc[i, data.columns.get_loc('Exit_Price')] = current_price
@@ -76,7 +79,7 @@ def get_signals(symbol, start_date, end_date, interval, stop_loss_pct=0.02, prof
                 data.iloc[i, data.columns.get_loc('Exit_Price')] = current_price
                 data.iloc[i, data.columns.get_loc('Exit_Reason')] = 'Profit Target'
                 in_position = False
-            elif data.iloc[i]['RSI'] > 70:
+            elif data['RSI'].iloc[i] > 70:
                 data.iloc[i, data.columns.get_loc('Exit_Signal')] = 1
                 data.iloc[i, data.columns.get_loc('Exit_Price')] = current_price
                 data.iloc[i, data.columns.get_loc('Exit_Reason')] = 'RSI Overbought'
@@ -115,6 +118,10 @@ def analyze_stocks(symbols, start_date, end_date, interval):
         st.subheader(f"Analysis for {symbol}")
         
         signals = get_signals(symbol, start_date, end_date, interval)
+        
+        if signals is None:
+            st.write(f"No data available for {symbol} in the selected time range and interval.")
+            continue
         
         # Plot stock data
         st.plotly_chart(plot_stock_data(signals, symbol))
