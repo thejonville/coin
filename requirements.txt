@@ -4,4 +4,4 @@ pandas
 datetime
 streamlit
 plotly
-ta
+talib
