@@ -1,94 +1,83 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import numpy as np
-from datetime import datetime, timedelta
 
-def calculate_macd(data):
-    exp1 = data['Close'].ewm(span=12, adjust=False).mean()
-    exp2 = data['Close'].ewm(span=26, adjust=False).mean()
-    macd = exp1 - exp2
-    signal = macd.ewm(span=9, adjust=False).mean()
-    return macd, signal
+def calculate_rsi(data, window=14):
+    delta = data['Close'].diff()
+    gain = (delta.where(delta > 0, 0)).fillna(0)
+    loss = (-delta.where(delta < 0, 0)).fillna(0)
+    
+    avg_gain = gain.rolling(window=window, min_periods=1).mean()
+    avg_loss = loss.rolling(window=window, min_periods=1).mean()
+    
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+    
+    return rsi
 
-def calculate_adx(data, period=14):
-    high = data['High']
-    low = data['Low']
-    close = data['Close']
-    
-    plus_dm = high.diff()
-    minus_dm = low.diff()
-    
-    plus_dm[plus_dm < 0] = 0
-    minus_dm[minus_dm > 0] = 0
-    
-    tr1 = pd.DataFrame(high - low)
-    tr2 = pd.DataFrame(abs(high - close.shift(1)))
-    tr3 = pd.DataFrame(abs(low - close.shift(1)))
-    tr = pd.concat([tr1, tr2, tr3], axis=1, join='inner').max(axis=1)
-    
-    atr = tr.rolling(window=period).mean()
-    plus_di = 100 * (plus_dm.ewm(alpha=1/period).mean() / atr)
-    minus_di = abs(100 * (minus_dm.ewm(alpha=1/period).mean() / atr))
-    dx = (abs(plus_di - minus_di) / (plus_di + minus_di)) * 100
-    adx = dx.ewm(alpha=1/period).mean()
-    
-    return adx
+def get_stock_data(ticker):
+    stock = yf.Ticker(ticker)
+    data = stock.history(period="1mo")
+    return data
 
-def check_macd_and_adx(ticker):
-    end_date = datetime.now()
-    start_date = end_date - timedelta(days=60)  # Get 60 days of data for calculation
+def filter_stocks(tickers, progress_bar):
+    selected_stocks = []
     
-    data = yf.download(ticker, start=start_date, end=end_date)
-    if len(data) < 27:  # We need at least 27 days of data for MACD calculation
-        return False, "Insufficient data"
+    for i, ticker in enumerate(tickers):
+        data = get_stock_data(ticker)
+        data['RSI'] = calculate_rsi(data)
+        
+        if len(data) < 30:
+            continue
+        
+        last_4_days_rsi = data['RSI'].tail(4)
+        if last_4_days_rsi.is_monotonic_increasing and last_4_days_rsi.iloc[-1] < 55:
+            past_month_rsi = data['RSI'].tail(30)
+            if (past_month_rsi >= 70).any():
+                selected_stocks.append(ticker)
+        
+        progress_bar.progress((i + 1) / len(tickers))
     
-    macd, signal = calculate_macd(data)
-    adx = calculate_adx(data)
-    
-    # Check last 2 days for MACD crossing above signal line
-    last_two_days = macd.tail(2)
-    last_two_days_signal = signal.tail(2)
-    last_adx = adx.tail(1).values[0]
-    
-    if len(last_two_days) < 2 or len(last_two_days_signal) < 2:
-        return False, "Insufficient recent data"
-    
-    if (last_two_days.iloc[0] <= last_two_days_signal.iloc[0] and 
-        last_two_days.iloc[1] > last_two_days_signal.iloc[1] and
-        last_adx >= 20):
-        # Calculate the strength of the crossing
-        crossing_strength = (last_two_days.iloc[1] - last_two_days_signal.iloc[1]) / last_two_days_signal.iloc[1]
-        if crossing_strength > 0.01:  # 1% threshold for "strong" crossing
-            return True, f"MACD Crossing: Yes, ADX: {last_adx:.2f}"
-    
-    return False, f"MACD Crossing: No, ADX: {last_adx:.2f}"
+    return selected_stocks
 
-st.title('Stock Scanner: MACD Crossing & ADX')
-
-# User input
-tickers_input = st.text_input("Enter stock tickers separated by commas:", "AAPL,MSFT,GOOGL")
-tickers = [ticker.strip().upper() for ticker in tickers_input.split(',')]
-
-if st.button('Scan Stocks'):
-    results = []
-    for ticker in tickers:
-        try:
-            signal, details = check_macd_and_adx(ticker)
-            status = "Potential Buy" if signal else "No Signal"
-            results.append({"Ticker": ticker, "Status": status, "Details": details})
-        except Exception as e:
-            results.append({"Ticker": ticker, "Status": "Error", "Details": str(e)})
+def main():
+    st.title("Stock RSI Scanner")
     
-    # Display results
-    st.subheader("Scan Results")
-    df = pd.DataFrame(results)
-    st.dataframe(df)
+    st.write("""
+    This app scans user-inputted stock tickers for the following criteria:
+    - Steady RSI gains over the last 4 days
+    - Current RSI under 55
+    - RSI has reached 70 in the past month
+    """)
     
-    # Display potential buy signals
-    potential_buys = df[df['Status'] == 'Potential Buy']
-    if not potential_buys.empty:
-        st.subheader("Potential Buy Signals")
-        st.dataframe(potential_buys)
-    else:
-        st.write("No potential buy signals detected.")
+    tickers_input = st.text_input("Enter stock tickers separated by commas:")
+    
+    if st.button("Scan Stocks"):
+        if tickers_input:
+            tickers = [ticker.strip().upper() for ticker in tickers_input.split(',')]
+            
+            progress_bar = st.progress(0)
+            st.write("Scanning stocks...")
+            
+            selected_stocks = filter_stocks(tickers, progress_bar)
+            
+            if selected_stocks:
+                st.success(f"Found {len(selected_stocks)} stocks meeting the criteria:")
+                for stock in selected_stocks:
+                    st.write(stock)
+                    
+                # Create a DataFrame for download
+                df = pd.DataFrame(selected_stocks, columns=["Ticker"])
+                st.download_button(
+                    label="Download results as CSV",
+                    data=df.to_csv(index=False).encode('utf-8'),
+                    file_name="selected_stocks.csv",
+                    mime="text/csv"
+                )
+            else:
+                st.warning("No stocks meet the criteria.")
+        else:
+            st.error("Please enter some stock tickers.")
+
+if __name__ == "__main__":
+    main()
