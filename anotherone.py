@@ -3,7 +3,7 @@ import yfinance as yf
 import pandas as pd
 from ta.momentum import RSIIndicator
 from ta.trend import EMAIndicator
-import matplotlib.pyplot as plt
+import plotly.graph_objs as go
 import io
 
 def analyze_stocks(tickers, start_date):
@@ -71,24 +71,39 @@ def plot_stock(ticker, start_date):
     df['EMA5'] = ema5_indicator.ema_indicator()
     df['EMA20'] = ema20_indicator.ema_indicator()
     
-    # Plot the data
-    fig, ax = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
+    # Create the figure
+    fig = go.Figure()
     
-    # Price and EMA plot
-    ax[0].plot(df.index, df['Close'], label='Close Price')
-    ax[0].plot(df.index, df['EMA5'], label='EMA5')
-    ax[0].plot(df.index, df['EMA20'], label='EMA20')
-    ax[0].set_title(f'{ticker} Price and EMA')
-    ax[0].legend()
+    # Add price and EMA traces
+    fig.add_trace(go.Scatter(x=df.index, y=df['Close'], mode='lines', name='Close Price'))
+    fig.add_trace(go.Scatter(x=df.index, y=df['EMA5'], mode='lines', name='EMA5'))
+    fig.add_trace(go.Scatter(x=df.index, y=df['EMA20'], mode='lines', name='EMA20'))
     
-    # RSI plot
-    ax[1].plot(df.index, df['RSI'], label='RSI')
-    ax[1].axhline(70, color='r', linestyle='--')
-    ax[1].axhline(30, color='r', linestyle='--')
-    ax[1].set_title('RSI')
-    ax[1].legend()
+    # Add RSI subplot
+    fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], mode='lines', name='RSI', yaxis='y2'))
     
-    plt.tight_layout()
+    # Update layout for dual y-axis
+    fig.update_layout(
+        title=f'{ticker} Price and EMA',
+        yaxis=dict(
+            title='Price',
+            side='left'
+        ),
+        yaxis2=dict(
+            title='RSI',
+            overlaying='y',
+            side='right',
+            range=[0, 100]
+        ),
+        xaxis=dict(
+            title='Date'
+        ),
+        legend=dict(
+            x=0,
+            y=1,
+            traceorder='normal'
+        )
+    )
     
     return fig
 
@@ -127,11 +142,11 @@ if st.button('Analyze Stocks'):
         
         if selected_ticker:
             fig = plot_stock(selected_ticker, start_date)
-            st.pyplot(fig)
+            st.plotly_chart(fig)
             
             # Download button
             buf = io.BytesIO()
-            fig.savefig(buf, format='png')
+            fig.write_image(buf, format='png')
             buf.seek(0)
             st.download_button(
                 label="Download chart as PNG",
