@@ -62,7 +62,7 @@ def plot_stock(ticker):
     df = stock.history(period="1mo")
     
     # Calculate RSI
-    rsi_indicator = RSIIndicator(close=df['Close'], window=14)
+    rsi_indicator = RSIIndicator(close=df['Close'], window=10)
     df['RSI'] = rsi_indicator.rsi()
     
     # Calculate EMA5 and EMA20
