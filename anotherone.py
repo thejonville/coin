@@ -67,7 +67,7 @@ def plot_stock(ticker):
     
     # Calculate EMA5 and EMA20
     ema5_indicator = EMAIndicator(close=df['Close'], window=5)
-    ema20_indicator = EMAIndicator(close(df['Close'], window=20)
+    ema20_indicator = EMAIndicator(close=df['Close'], window=20)
     df['EMA5'] = ema5_indicator.ema_indicator()
     df['EMA20'] = ema20_indicator.ema_indicator()
     
@@ -145,11 +145,11 @@ st.sidebar.header("About")
 st.sidebar.info(
     "This app scans user-inputted stock tickers to find stocks that meet the following criteria:\n\n"
     "1. The most recent buy candle is larger than the previous sell candle\n"
-    "2. RSI is below 70\n"
+    "2. RSI below 70\n"
     "3. EMA5 has crossed above EMA20 in the last 2 days\n\n"
     "Enter stock tickers separated by commas and click 'Analyze Stocks' to start."
 )
 
 # Add a footer
 st.sidebar.markdown("---")
-st.sidebar.markdown("Created by Ville")
+st.sidebar.markdown("Created with Streamlit")
