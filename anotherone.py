@@ -12,7 +12,7 @@ def analyze_stocks(tickers):
     for ticker in tickers:
         # Fetch historical data
         stock = yf.Ticker(ticker)
-        df = stock.history(period="1mo")
+        df = stock.history(period="1y")
         
         # Calculate RSI
         rsi_indicator = RSIIndicator(close=df['Close'], window=10)
