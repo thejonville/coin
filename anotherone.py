@@ -6,15 +6,15 @@ from ta.trend import EMAIndicator
 import matplotlib.pyplot as plt
 import io
 
-def analyze_stocks(tickers):
+def analyze_stocks(tickers, start_date):
     results = []
     
     for ticker in tickers:
         # Fetch historical data
         stock = yf.Ticker(ticker)
-        df = stock.history(period="1y")
+        df = stock.history(start=start_date)
         
-        # Calculate RSI
+        # Calculate RSI with a 10-period window
         rsi_indicator = RSIIndicator(close=df['Close'], window=10)
         df['RSI'] = rsi_indicator.rsi()
         
@@ -57,11 +57,11 @@ def analyze_stocks(tickers):
     
     return results
 
-def plot_stock(ticker):
+def plot_stock(ticker, start_date):
     stock = yf.Ticker(ticker)
-    df = stock.history(period="1mo")
+    df = stock.history(start=start_date)
     
-    # Calculate RSI
+    # Calculate RSI with a 10-period window
     rsi_indicator = RSIIndicator(close=df['Close'], window=10)
     df['RSI'] = rsi_indicator.rsi()
     
@@ -95,8 +95,11 @@ def plot_stock(ticker):
 # Streamlit app
 st.title('Advanced Stock Scanner')
 
-# User input
+# User input for stock tickers
 user_input = st.text_input("Enter stock tickers separated by commas:", "AAPL,MSFT,GOOGL")
+
+# User input for start date
+start_date = st.date_input("Select start date", pd.to_datetime("2022-01-01"))
 
 # Analysis button
 if st.button('Analyze Stocks'):
@@ -104,13 +107,13 @@ if st.button('Analyze Stocks'):
     tickers = [ticker.strip() for ticker in user_input.split(',')]
     
     with st.spinner('Analyzing stocks...'):
-        results = analyze_stocks(tickers)
+        results = analyze_stocks(tickers, start_date)
 
     # Display results
     if results:
         st.subheader("Stocks meeting the following criteria:")
         st.write("1. Recent buy candle larger than previous sell candle")
-        st.write("2. RSI below 70")
+        st.write("2. RSI below 70 (10-period)")
         st.write("3. EMA5 crossed above EMA20 in the last 2 days")
         
         # Convert results to DataFrame
@@ -123,7 +126,7 @@ if st.button('Analyze Stocks'):
         selected_ticker = st.selectbox("Select a stock to view chart", df_results['Ticker'])
         
         if selected_ticker:
-            fig = plot_stock(selected_ticker)
+            fig = plot_stock(selected_ticker, start_date)
             st.pyplot(fig)
             
             # Download button
@@ -145,7 +148,7 @@ st.sidebar.header("About")
 st.sidebar.info(
     "This app scans user-inputted stock tickers to find stocks that meet the following criteria:\n\n"
     "1. The most recent buy candle is larger than the previous sell candle\n"
-    "2. RSI below 70\n"
+    "2. RSI is below 70 (10-period)\n"
     "3. EMA5 has crossed above EMA20 in the last 2 days\n\n"
     "Enter stock tickers separated by commas and click 'Analyze Stocks' to start."
 )
