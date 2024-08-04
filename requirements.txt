@@ -6,3 +6,4 @@ streamlit
 plotly
 ta
 streamlit-aggrid
+matplotlib
