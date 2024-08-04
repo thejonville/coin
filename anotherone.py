@@ -5,6 +5,8 @@ from ta.momentum import RSIIndicator
 from ta.trend import EMAIndicator
 from st_aggrid import AgGrid, GridOptionsBuilder
 from st_aggrid.shared import GridUpdateMode
+import matplotlib.pyplot as plt
+import io
 
 def analyze_stocks(tickers):
     results = []
@@ -57,6 +59,41 @@ def analyze_stocks(tickers):
     
     return results
 
+def plot_stock(ticker):
+    stock = yf.Ticker(ticker)
+    df = stock.history(period="1mo")
+    
+    # Calculate RSI
+    rsi_indicator = RSIIndicator(close=df['Close'], window=14)
+    df['RSI'] = rsi_indicator.rsi()
+    
+    # Calculate EMA5 and EMA20
+    ema5_indicator = EMAIndicator(close=df['Close'], window=5)
+    ema20_indicator = EMAIndicator(close=df['Close'], window=20)
+    df['EMA5'] = ema5_indicator.ema_indicator()
+    df['EMA20'] = ema20_indicator.ema_indicator()
+    
+    # Plot the data
+    fig, ax = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
+    
+    # Price and EMA plot
+    ax[0].plot(df.index, df['Close'], label='Close Price')
+    ax[0].plot(df.index, df['EMA5'], label='EMA5')
+    ax[0].plot(df.index, df['EMA20'], label='EMA20')
+    ax[0].set_title(f'{ticker} Price and EMA')
+    ax[0].legend()
+    
+    # RSI plot
+    ax[1].plot(df.index, df['RSI'], label='RSI')
+    ax[1].axhline(70, color='r', linestyle='--')
+    ax[1].axhline(30, color='r', linestyle='--')
+    ax[1].set_title('RSI')
+    ax[1].legend()
+    
+    plt.tight_layout()
+    
+    return fig
+
 # Streamlit app
 st.title('Advanced Stock Scanner')
 
@@ -98,6 +135,25 @@ if st.button('Analyze Stocks'):
             height=400
         )
         
+        # Get selected row
+        selected_row = grid_response['selected_rows']
+        if selected_row:
+            selected_ticker = selected_row[0]['Ticker']
+            st.write(f"Selected Ticker: {selected_ticker}")
+            fig = plot_stock(selected_ticker)
+            st.pyplot(fig)
+            
+            # Download button
+            buf = io.BytesIO()
+            fig.savefig(buf, format='png')
+            buf.seek(0)
+            st.download_button(
+                label="Download chart as PNG",
+                data=buf,
+                file_name=f"{selected_ticker}_chart.png",
+                mime="image/png"
+            )
+        
     else:
         st.info("No stocks found matching the criteria.")
 
@@ -113,4 +169,4 @@ st.sidebar.info(
 
 # Add a footer
 st.sidebar.markdown("---")
-st.sidebar.markdown("Created with Streamlit")
+st.sidebar.markdown("Created by Ville")
