@@ -3,6 +3,8 @@ import yfinance as yf
 import pandas as pd
 from ta.momentum import RSIIndicator
 from ta.trend import EMAIndicator
+from st_aggrid import AgGrid, GridOptionsBuilder
+from st_aggrid.shared import GridUpdateMode
 
 def analyze_stocks(tickers):
     results = []
@@ -44,12 +46,13 @@ def analyze_stocks(tickers):
                 if buy_size > sell_size:
                     results.append({
                         'Ticker': ticker,
-                        'Date': latest_buy.name,
-                        'Buy Size': buy_size,
-                        'Sell Size': sell_size,
-                        'RSI': latest_buy['RSI'],
-                        'EMA5': latest_buy['EMA5'],
-                        'EMA20': latest_buy['EMA20']
+                        'Date': latest_buy.name.date(),
+                        'Buy Size': round(buy_size, 2),
+                        'Sell Size': round(sell_size, 2),
+                        'RSI': round(latest_buy['RSI'], 2),
+                        'EMA5': round(latest_buy['EMA5'], 2),
+                        'EMA20': round(latest_buy['EMA20'], 2),
+                        'Volume': int(latest_buy['Volume'])
                     })
     
     return results
@@ -74,15 +77,27 @@ if st.button('Analyze Stocks'):
         st.write("1. Recent buy candle larger than previous sell candle")
         st.write("2. RSI below 70")
         st.write("3. EMA5 crossed above EMA20 in the last 2 days")
-        for result in results:
-            st.write(f"**Ticker:** {result['Ticker']}")
-            st.write(f"**Date:** {result['Date']}")
-            st.write(f"**Buy Candle Size:** {result['Buy Size']:.2f}")
-            st.write(f"**Previous Sell Candle Size:** {result['Sell Size']:.2f}")
-            st.write(f"**RSI:** {result['RSI']:.2f}")
-            st.write(f"**EMA5:** {result['EMA5']:.2f}")
-            st.write(f"**EMA20:** {result['EMA20']:.2f}")
-            st.write("---")
+        
+        # Convert results to DataFrame
+        df_results = pd.DataFrame(results)
+        
+        # Configure AgGrid
+        gb = GridOptionsBuilder.from_dataframe(df_results)
+        gb.configure_default_column(enablePivot=True, enableValue=True, enableRowGroup=True)
+        gb.configure_selection(selection_mode="single", use_checkbox=True)
+        gb.configure_side_bar()
+        gridOptions = gb.build()
+
+        # Display interactive table
+        st.subheader("Interactive Results Table (Click column headers to sort)")
+        grid_response = AgGrid(
+            df_results, 
+            gridOptions=gridOptions, 
+            enable_enterprise_modules=True, 
+            update_mode=GridUpdateMode.MODEL_CHANGED, 
+            height=400
+        )
+        
     else:
         st.info("No stocks found matching the criteria.")
 
