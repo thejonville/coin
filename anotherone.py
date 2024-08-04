@@ -6,6 +6,7 @@ from ta.trend import EMAIndicator
 import plotly.graph_objs as go
 import io
 
+@st.cache_data
 def analyze_stocks(tickers, start_date):
     results = []
     
@@ -57,6 +58,7 @@ def analyze_stocks(tickers, start_date):
     
     return results
 
+@st.cache_data
 def plot_stock(ticker, start_date):
     stock = yf.Ticker(ticker)
     df = stock.history(start=start_date)
@@ -116,47 +118,53 @@ user_input = st.text_input("Enter stock tickers separated by commas:", "AAPL,MSF
 # User input for start date
 start_date = st.date_input("Select start date", pd.to_datetime("2022-01-01"))
 
+# Initialize session state
+if 'analyzed' not in st.session_state:
+    st.session_state.analyzed = False
+if 'results' not in st.session_state:
+    st.session_state.results = None
+
 # Analysis button
 if st.button('Analyze Stocks'):
     # Parse input and analyze stocks
     tickers = [ticker.strip() for ticker in user_input.split(',')]
     
     with st.spinner('Analyzing stocks...'):
-        results = analyze_stocks(tickers, start_date)
+        st.session_state.results = analyze_stocks(tickers, start_date)
+        st.session_state.analyzed = True
 
-    # Display results
-    if results:
-        st.subheader("Stocks meeting the following criteria:")
-        st.write("1. Recent buy candle larger than previous sell candle")
-        st.write("2. RSI below 70 (10-period)")
-        st.write("3. EMA5 crossed above EMA20 in the last 2 days")
+# Display results
+if st.session_state.analyzed and st.session_state.results:
+    st.subheader("Stocks meeting the following criteria:")
+    st.write("1. Recent buy candle larger than previous sell candle")
+    st.write("2. RSI below 70 (10-period)")
+    st.write("3. EMA5 crossed above EMA20 in the last 2 days")
+    
+    # Convert results to DataFrame
+    df_results = pd.DataFrame(st.session_state.results)
+    
+    # Display results table
+    st.dataframe(df_results)
+    
+    # Allow user to select a stock
+    selected_ticker = st.selectbox("Select a stock to view chart", df_results['Ticker'])
+    
+    if selected_ticker:
+        fig = plot_stock(selected_ticker, start_date)
+        st.plotly_chart(fig)
         
-        # Convert results to DataFrame
-        df_results = pd.DataFrame(results)
-        
-        # Display results table
-        st.dataframe(df_results)
-        
-        # Allow user to select a stock
-        selected_ticker = st.selectbox("Select a stock to view chart", df_results['Ticker'])
-        
-        if selected_ticker:
-            fig = plot_stock(selected_ticker, start_date)
-            st.plotly_chart(fig)
-            
-            # Download button
-            buf = io.BytesIO()
-            fig.write_image(buf, format='png')
-            buf.seek(0)
-            st.download_button(
-                label="Download chart as PNG",
-                data=buf,
-                file_name=f"{selected_ticker}_chart.png",
-                mime="image/png"
-            )
-        
-    else:
-        st.info("No stocks found matching the criteria.")
+        # Download button
+        buf = io.BytesIO()
+        fig.write_image(buf, format='png')
+        buf.seek(0)
+        st.download_button(
+            label="Download chart as PNG",
+            data=buf,
+            file_name=f"{selected_ticker}_chart.png",
+            mime="image/png"
+        )
+elif st.session_state.analyzed:
+    st.info("No stocks found matching the criteria.")
 
 # Add some information about the app
 st.sidebar.header("About")
