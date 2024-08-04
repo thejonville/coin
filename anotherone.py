@@ -3,16 +3,8 @@ import yfinance as yf
 import pandas as pd
 from ta.momentum import RSIIndicator
 from ta.trend import EMAIndicator
-from st_aggrid import AgGrid, GridOptionsBuilder
-from st_aggrid.shared import GridUpdateMode
 import matplotlib.pyplot as plt
 import io
-
-# Initialize session state
-if 'selected_ticker' not in st.session_state:
-    st.session_state.selected_ticker = None
-if 'chart_fig' not in st.session_state:
-    st.session_state.chart_fig = None
 
 def analyze_stocks(tickers):
     results = []
@@ -75,7 +67,7 @@ def plot_stock(ticker):
     
     # Calculate EMA5 and EMA20
     ema5_indicator = EMAIndicator(close=df['Close'], window=5)
-    ema20_indicator = EMAIndicator(close=df['Close'], window=20)
+    ema20_indicator = EMAIndicator(close(df['Close'], window=20)
     df['EMA5'] = ema5_indicator.ema_indicator()
     df['EMA20'] = ema20_indicator.ema_indicator()
     
@@ -124,47 +116,29 @@ if st.button('Analyze Stocks'):
         # Convert results to DataFrame
         df_results = pd.DataFrame(results)
         
-        # Configure AgGrid
-        gb = GridOptionsBuilder.from_dataframe(df_results)
-        gb.configure_default_column(enablePivot=True, enableValue=True, enableRowGroup=True)
-        gb.configure_selection(selection_mode="single", use_checkbox=True)
-        gb.configure_side_bar()
-        gridOptions = gb.build()
-
-        # Display interactive table
-        st.subheader("Interactive Results Table (Click column headers to sort)")
-        grid_response = AgGrid(
-            df_results, 
-            gridOptions=gridOptions, 
-            enable_enterprise_modules=True, 
-            update_mode=GridUpdateMode.MODEL_CHANGED, 
-            height=400
-        )
+        # Display results table
+        st.dataframe(df_results)
         
-        # Get selected row
-        selected_row = grid_response['selected_rows']
-        if selected_row:
-            st.session_state.selected_ticker = selected_row[0]['Ticker']
-            st.session_state.chart_fig = plot_stock(st.session_state.selected_ticker)
+        # Allow user to select a stock
+        selected_ticker = st.selectbox("Select a stock to view chart", df_results['Ticker'])
+        
+        if selected_ticker:
+            fig = plot_stock(selected_ticker)
+            st.pyplot(fig)
+            
+            # Download button
+            buf = io.BytesIO()
+            fig.savefig(buf, format='png')
+            buf.seek(0)
+            st.download_button(
+                label="Download chart as PNG",
+                data=buf,
+                file_name=f"{selected_ticker}_chart.png",
+                mime="image/png"
+            )
         
     else:
         st.info("No stocks found matching the criteria.")
-
-# Display chart and download button outside the button click event
-if st.session_state.selected_ticker and st.session_state.chart_fig:
-    st.write(f"Selected Ticker: {st.session_state.selected_ticker}")
-    st.pyplot(st.session_state.chart_fig)
-    
-    # Download button
-    buf = io.BytesIO()
-    st.session_state.chart_fig.savefig(buf, format='png')
-    buf.seek(0)
-    st.download_button(
-        label="Download chart as PNG",
-        data=buf,
-        file_name=f"{st.session_state.selected_ticker}_chart.png",
-        mime="image/png"
-    )
 
 # Add some information about the app
 st.sidebar.header("About")
