@@ -7,3 +7,4 @@ plotly
 ta
 streamlit-aggrid
 matplotlib
+kaleido
