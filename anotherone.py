@@ -9,8 +9,8 @@ from ta.volatility import BollingerBands
 import plotly.graph_objects as go
 from datetime import date, timedelta
 
-def get_signals(symbol, start_date, end_date):
-    # Download data (consider using intraday data for very short-term trading)
+def get_signals(symbol, start_date, end_date, stop_loss_pct=0.02, profit_target_pct=0.05):
+    # Download data
     data = yf.download(symbol, start=start_date, end=end_date, interval="1h")
     
     # Calculate indicators
@@ -25,19 +25,44 @@ def get_signals(symbol, start_date, end_date):
     data['RSI'] = rsi.rsi()
     
     bb = BollingerBands(data['Close'], window=10)
-    data['BB_Upper'] = bb.bollinger_hband()
     data['BB_Lower'] = bb.bollinger_lband()
     
-    # Generate buy signals
+    # Generate buy signals and exit prices
     data['Buy_Signal'] = 0
-    data.loc[(data['SMA_5'] > data['SMA_20']) &
-             (data['MACD'] > data['MACD_Signal']) &
-             (data['RSI'] < 60) &  # Less strict RSI condition
-             (data['Close'] < data['BB_Lower']), 'Buy_Signal'] = 1
-    
-    # Simple short-term exit strategy (exit after 5 periods or when RSI > 70)
     data['Exit_Signal'] = 0
-    data.loc[(data['Buy_Signal'].rolling(window=5).sum() > 0) | (data['RSI'] > 70), 'Exit_Signal'] = 1
+    data['Entry_Price'] = np.nan
+    data['Exit_Price'] = np.nan
+    data['Exit_Reason'] = ''
+    
+    in_position = False
+    entry_price = 0
+    
+    for i in range(1, len(data)):
+        if not in_position:
+            if (data.iloc[i]['SMA_5'] > data.iloc[i]['SMA_20']) and \
+               (data.iloc[i]['MACD'] > data.iloc[i]['MACD_Signal']) and \
+               (data.iloc[i]['RSI'] < 60) and (data.iloc[i]['Close'] < data.iloc[i]['BB_Lower']):
+                data.iloc[i, data.columns.get_loc('Buy_Signal')] = 1
+                data.iloc[i, data.columns.get_loc('Entry_Price')] = data.iloc[i]['Close']
+                in_position = True
+                entry_price = data.iloc[i]['Close']
+        else:
+            current_price = data.iloc[i]['Close']
+            if current_price <= entry_price * (1 - stop_loss_pct):
+                data.iloc[i, data.columns.get_loc('Exit_Signal')] = 1
+                data.iloc[i, data.columns.get_loc('Exit_Price')] = current_price
+                data.iloc[i, data.columns.get_loc('Exit_Reason')] = 'Stop Loss'
+                in_position = False
+            elif current_price >= entry_price * (1 + profit_target_pct):
+                data.iloc[i, data.columns.get_loc('Exit_Signal')] = 1
+                data.iloc[i, data.columns.get_loc('Exit_Price')] = current_price
+                data.iloc[i, data.columns.get_loc('Exit_Reason')] = 'Profit Target'
+                in_position = False
+            elif data.iloc[i]['RSI'] > 70:
+                data.iloc[i, data.columns.get_loc('Exit_Signal')] = 1
+                data.iloc[i, data.columns.get_loc('Exit_Price')] = current_price
+                data.iloc[i, data.columns.get_loc('Exit_Reason')] = 'RSI Overbought'
+                in_position = False
     
     return data
 
@@ -78,17 +103,26 @@ def analyze_stocks(symbols, start_date, end_date):
         
         # Print buy signals, entry prices, and exit prices
         buy_signals = signals[signals['Buy_Signal'] == 1]
+        exit_signals = signals[signals['Exit_Signal'] == 1]
+        
         if buy_signals.empty:
             st.write("No buy signals generated for this stock in the given time period.")
         else:
-            for index, row in buy_signals.iterrows():
-                st.write(f"Buy Signal on {index}:")
-                st.write(f"Entry Price: ${row['Close']:.2f}")
-                exit_signal = signals.loc[signals.index > index, 'Exit_Signal'].first_valid_index()
-                if exit_signal:
-                    st.write(f"Exit Price: ${signals.loc[exit_signal, 'Close']:.2f} on {exit_signal}")
+            for i, (buy_index, buy_row) in enumerate(buy_signals.iterrows()):
+                st.write(f"Trade {i+1}:")
+                st.write(f"Buy Signal on {buy_index}:")
+                st.write(f"Entry Price: ${buy_row['Entry_Price']:.2f}")
+                
+                # Find the next exit signal after this buy signal
+                next_exit = exit_signals[exit_signals.index > buy_index].iloc[0] if not exit_signals[exit_signals.index > buy_index].empty else None
+                
+                if next_exit is not None:
+                    st.write(f"Exit Signal on {next_exit.name}:")
+                    st.write(f"Exit Price: ${next_exit['Exit_Price']:.2f} ({next_exit['Exit_Reason']})")
+                    profit_loss = (next_exit['Exit_Price'] - buy_row['Entry_Price']) / buy_row['Entry_Price'] * 100
+                    st.write(f"Profit/Loss: {profit_loss:.2f}%")
                 else:
-                    st.write("Exit Price: Not available (hold position)")
+                    st.write("No exit signal generated (hold position)")
                 st.write("")
 
 # Streamlit app
