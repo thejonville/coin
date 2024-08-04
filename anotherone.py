@@ -8,6 +8,12 @@ from st_aggrid.shared import GridUpdateMode
 import matplotlib.pyplot as plt
 import io
 
+# Initialize session state
+if 'selected_ticker' not in st.session_state:
+    st.session_state.selected_ticker = None
+if 'chart_fig' not in st.session_state:
+    st.session_state.chart_fig = None
+
 def analyze_stocks(tickers):
     results = []
     
@@ -138,24 +144,27 @@ if st.button('Analyze Stocks'):
         # Get selected row
         selected_row = grid_response['selected_rows']
         if selected_row:
-            selected_ticker = selected_row[0]['Ticker']
-            st.write(f"Selected Ticker: {selected_ticker}")
-            fig = plot_stock(selected_ticker)
-            st.pyplot(fig)
-            
-            # Download button
-            buf = io.BytesIO()
-            fig.savefig(buf, format='png')
-            buf.seek(0)
-            st.download_button(
-                label="Download chart as PNG",
-                data=buf,
-                file_name=f"{selected_ticker}_chart.png",
-                mime="image/png"
-            )
+            st.session_state.selected_ticker = selected_row[0]['Ticker']
+            st.session_state.chart_fig = plot_stock(st.session_state.selected_ticker)
         
     else:
         st.info("No stocks found matching the criteria.")
+
+# Display chart and download button outside the button click event
+if st.session_state.selected_ticker and st.session_state.chart_fig:
+    st.write(f"Selected Ticker: {st.session_state.selected_ticker}")
+    st.pyplot(st.session_state.chart_fig)
+    
+    # Download button
+    buf = io.BytesIO()
+    st.session_state.chart_fig.savefig(buf, format='png')
+    buf.seek(0)
+    st.download_button(
+        label="Download chart as PNG",
+        data=buf,
+        file_name=f"{st.session_state.selected_ticker}_chart.png",
+        mime="image/png"
+    )
 
 # Add some information about the app
 st.sidebar.header("About")
