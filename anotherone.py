@@ -1,86 +1,69 @@
-import streamlit as st
+```python
 import yfinance as yf
 import pandas as pd
+import numpy as np
+from ta.trend import MACD
+from ta.momentum import RSIIndicator
+from ta.volatility import BollingerBands
 
-def calculate_rsi(data, window=14):
-    delta = data['Close'].diff()
-    gain = (delta.where(delta > 0, 0)).fillna(0)
-    loss = (-delta.where(delta < 0, 0)).fillna(0)
+def get_signals(symbol, start_date, end_date):
+    # Download data
+    data = yf.download(symbol, start=start_date, end=end_date)
     
-    avg_gain = gain.rolling(window=window, min_periods=1).mean()
-    avg_loss = loss.rolling(window=window, min_periods=1).mean()
+    # Calculate indicators
+    data['SMA_50'] = data['Close'].rolling(window=50).mean()
+    data['SMA_200'] = data['Close'].rolling(window=200).mean()
     
-    rs = avg_gain / avg_loss
-    rsi = 100 - (100 / (1 + rs))
+    macd = MACD(data['Close'])
+    data['MACD'] = macd.macd()
+    data['MACD_Signal'] = macd.macd_signal()
     
-    return rsi
-
-def get_stock_data(ticker):
-    stock = yf.Ticker(ticker)
-    data = stock.history(period="1mo")
+    rsi = RSIIndicator(data['Close'])
+    data['RSI'] = rsi.rsi()
+    
+    bb = BollingerBands(data['Close'])
+    data['BB_Upper'] = bb.bollinger_hband()
+    data['BB_Lower'] = bb.bollinger_lband()
+    
+    # Generate buy signals
+    data['Buy_Signal'] = 0
+    data.loc[(data['SMA_50'] > data['SMA_200']) &
+             (data['MACD'] > data['MACD_Signal']) &
+             (data['RSI'] < 70) &
+             (data['Close'] < data['BB_Lower']), 'Buy_Signal'] = 1
+    
+    # Calculate entry and exit prices
+    data['Entry_Price'] = np.where(data['Buy_Signal'] == 1, data['Close'], np.nan)
+    data['Exit_Price'] = np.where(data['Buy_Signal'].shift(1) == 1, data['Close'], np.nan)
+    
     return data
 
-def filter_stocks(tickers, progress_bar):
-    selected_stocks = []
-    
-    for i, ticker in enumerate(tickers):
-        data = get_stock_data(ticker)
-        data['RSI'] = calculate_rsi(data)
+def analyze_stocks(symbols, start_date, end_date):
+    for symbol in symbols:
+        print(f"\nAnalyzing {symbol}:")
+        signals = get_signals(symbol, start_date, end_date)
         
-        if len(data) < 30:
-            continue
-        
-        current_rsi = data['RSI'].iloc[-1]
-        past_month_rsi = data['RSI'].tail(30)
-        
-        if current_rsi < 55 and (past_month_rsi >= 70).any():
-            selected_stocks.append((ticker, current_rsi))
-        
-        progress_bar.progress((i + 1) / len(tickers))
-    
-    return selected_stocks
-
-def main():
-    st.title("Stock RSI Scanner")
-    
-    st.write("""
-    This app scans user-inputted stock tickers for the following criteria:
-    - Current RSI under 55
-    - RSI has reached 70 or above in the past month
-    """)
-    
-    tickers_input = st.text_input("Enter stock tickers separated by commas:")
-    
-    if st.button("Scan Stocks"):
-        if tickers_input:
-            tickers = [ticker.strip().upper() for ticker in tickers_input.split(',')]
-            
-            progress_bar = st.progress(0)
-            st.write("Scanning stocks...")
-            
-            selected_stocks = filter_stocks(tickers, progress_bar)
-            
-            if selected_stocks:
-                st.success(f"Found {len(selected_stocks)} stocks meeting the criteria:")
-                
-                # Create a DataFrame for display and download
-                df = pd.DataFrame(selected_stocks, columns=["Ticker", "Current RSI"])
-                df = df.sort_values("Current RSI")
-                
-                # Display results in a table
-                st.table(df)
-                
-                # Provide download button
-                st.download_button(
-                    label="Download results as CSV",
-                    data=df.to_csv(index=False).encode('utf-8'),
-                    file_name="selected_stocks.csv",
-                    mime="text/csv"
-                )
-            else:
-                st.warning("No stocks meet the criteria.")
+        # Print buy signals, entry prices, and exit prices
+        buy_signals = signals[signals['Buy_Signal'] == 1]
+        if buy_signals.empty:
+            print("No buy signals generated for this stock in the given time period.")
         else:
-            st.error("Please enter some stock tickers.")
+            for index, row in buy_signals.iterrows():
+                print(f"Buy Signal on {index.date()}:")
+                print(f"Entry Price: ${row['Entry_Price']:.2f}")
+                exit_price = signals.loc[signals.index > index, 'Exit_Price'].first_valid_index()
+                if exit_price:
+                    print(f"Exit Price: ${signals.loc[exit_price, 'Exit_Price']:.2f}")
+                else:
+                    print("Exit Price: Not available (hold position)")
+                print()
 
-if __name__ == "__main__":
-    main()
+# Example usage
+symbols_input = input("Enter stock symbols separated by commas (e.g., AAPL,MSFT,GOOGL): ")
+symbols = [symbol.strip() for symbol in symbols_input.split(',')]
+start_date = input("Enter start date (YYYY-MM-DD): ")
+end_date = input("Enter end date (YYYY-MM-DD): ")
+
+analyze_stocks(symbols, start_date, end_date)
+
+```
