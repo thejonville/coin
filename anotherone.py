@@ -30,11 +30,11 @@ def filter_stocks(tickers, progress_bar):
         if len(data) < 30:
             continue
         
-        last_4_days_rsi = data['RSI'].tail(4)
-        if last_4_days_rsi.is_monotonic_increasing and last_4_days_rsi.iloc[-1] < 55:
-            past_month_rsi = data['RSI'].tail(30)
-            if (past_month_rsi >= 70).any():
-                selected_stocks.append(ticker)
+        current_rsi = data['RSI'].iloc[-1]
+        past_month_rsi = data['RSI'].tail(30)
+        
+        if current_rsi < 55 and (past_month_rsi >= 70).any():
+            selected_stocks.append((ticker, current_rsi))
         
         progress_bar.progress((i + 1) / len(tickers))
     
@@ -45,9 +45,8 @@ def main():
     
     st.write("""
     This app scans user-inputted stock tickers for the following criteria:
-    - Steady RSI gains over the last 4 days
     - Current RSI under 55
-    - RSI has reached 70 in the past month
+    - RSI has reached 70 or above in the past month
     """)
     
     tickers_input = st.text_input("Enter stock tickers separated by commas:")
@@ -63,11 +62,15 @@ def main():
             
             if selected_stocks:
                 st.success(f"Found {len(selected_stocks)} stocks meeting the criteria:")
-                for stock in selected_stocks:
-                    st.write(stock)
-                    
-                # Create a DataFrame for download
-                df = pd.DataFrame(selected_stocks, columns=["Ticker"])
+                
+                # Create a DataFrame for display and download
+                df = pd.DataFrame(selected_stocks, columns=["Ticker", "Current RSI"])
+                df = df.sort_values("Current RSI")
+                
+                # Display results in a table
+                st.table(df)
+                
+                # Provide download button
                 st.download_button(
                     label="Download results as CSV",
                     data=df.to_csv(index=False).encode('utf-8'),
